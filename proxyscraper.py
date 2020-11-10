@@ -1,100 +1,116 @@
 #!/usr/bin/env python3.9
 from bs4 import BeautifulSoup
+import threading
 import requests
-import random
-import sys
-import os
+import argparse
 
-chain_mode = "random_chain"
-line_ending = "\r\n"
-valid_types = [ 'http', 'https', 'socks4', 'socks5']
-valid_anonymity = ['elite', 'anonymous', 'transparent']
-max_timeout = 10000
+proxy_types = [ 'http', 'https' ]
+anonymity_levels = [ 'elite', 'anonymous', 'transparent' ]
 
-if len(sys.argv) == 6:
-	proxy_type = str(sys.argv[1])
-	proxy_timeout = str(sys.argv[2])
-	proxy_country = str(sys.argv[3])
-	proxy_anonymity = str(sys.argv[4])
-	proxy_num = int(sys.argv[5])
-elif len(sys.argv) == 3:
-	proxy_type = str(sys.argv[1])
-	proxy_num = int(sys.argv[2])
-	proxy_timeout = 10000
-	proxy_country = "all"
-	proxy_anonymity = "elite"
-else:
-	print(f"""Usage:
-{sys.argv[0]} [type] [timeout] [country] [anonymity] [proxy num]
-{sys.argv[0]} [type] [proxy num]
-
-Defaults:
-Type =			( http, https, socks4, socks5 )
-Timeout = 10000ms	( <= 10000ms )
-Country = all		Country 2-letter code
-Anonymity = elite	( elite, anonymous, transparent)
+print("""
+   ██▓███   ██▀███   ▒█████  ▒██   ██▒▓██   ██▓  ██████  ▄████▄   ██▀███   ▄▄▄       ██▓███  ▓█████  ██▀███  
+  ▓██░  ██▒▓██ ▒ ██▒▒██▒  ██▒▒▒ █ █ ▒░ ▒██  ██▒▒██    ▒ ▒██▀ ▀█  ▓██ ▒ ██▒▒████▄    ▓██░  ██▒▓█   ▀ ▓██ ▒ ██▒
+  ▓██░ ██▓▒▓██ ░▄█ ▒▒██░  ██▒░░  █   ░  ▒██ ██░░ ▓██▄   ▒▓█    ▄ ▓██ ░▄█ ▒▒██  ▀█▄  ▓██░ ██▓▒▒███   ▓██ ░▄█ ▒
+  ▒██▄█▓▒ ▒▒██▀▀█▄  ▒██   ██░ ░ █ █ ▒   ░ ▐██▓░  ▒   ██▒▒▓▓▄ ▄██▒▒██▀▀█▄  ░██▄▄▄▄██ ▒██▄█▓▒ ▒▒▓█  ▄ ▒██▀▀█▄\tBy threadexio
+  ▒██▒ ░  ░░██▓ ▒██▒░ ████▓▒░▒██▒ ▒██▒  ░ ██▒▓░▒██████▒▒▒ ▓███▀ ░░██▓ ▒██▒ ▓█   ▓██▒▒██▒ ░  ░░▒████▒░██▓ ▒██▒\ton Github
+  ▒▓▒░ ░  ░░ ▒▓ ░▒▓░░ ▒░▒░▒░ ▒▒ ░ ░▓ ░   ██▒▒▒ ▒ ▒▓▒ ▒ ░░ ░▒ ▒  ░░ ▒▓ ░▒▓░ ▒▒   ▓▒█░▒▓▒░ ░  ░░░ ▒░ ░░ ▒▓ ░▒▓░
+  ░▒ ░       ░▒ ░ ▒░  ░ ▒ ▒░ ░░   ░▒ ░ ▓██ ░▒░ ░ ░▒  ░ ░  ░  ▒     ░▒ ░ ▒░  ▒   ▒▒ ░░▒ ░      ░ ░  ░  ░▒ ░ ▒░
+  ░░         ░░   ░ ░ ░ ░ ▒   ░    ░   ▒ ▒ ░░  ░  ░  ░  ░          ░░   ░   ░   ▒   ░░          ░     ░░   ░ 
+              ░         ░ ░   ░    ░   ░ ░           ░  ░ ░         ░           ░  ░            ░  ░   ░     
+                                       ░ ░              ░                                                    
 """)
-	exit(0)
 
-# Check if arguments are invalid
-if not proxy_type in valid_types:
-	print(f"Invalid proxy type: {proxy_type}")
-	exit(1)
-if not proxy_anonymity in valid_anonymity:
-	print(f"Invalid anonymity: {proxy_anonymity}")
-	exit(1)
-if int(proxy_timeout) > max_timeout:
-	print(f"Invalid timeout: {proxy_timeout}")
-	exit(1)
+parser = argparse.ArgumentParser()
+parser.add_argument("type", help="Proxy type (http, https)", type=str)
+parser.add_argument("-n", help="Number of proxies to get", type=int, default=0)
+parser.add_argument("-a", help="Anonymity level (transparent, anonymous, default: elite)", type=str, default="elite")
+parser.add_argument("-o", help="Output file (default: proxies.txt)", type=str, default="proxies.txt")
+args = parser.parse_args()
 
-base_url = "https://api.proxyscrape.com/?request=getproxies&"
+proxy_type = args.type
+proxy_num = args.n
+proxy_anonymity = args.a
 
-url = base_url + f"proxytype={proxy_type}&timeout={proxy_timeout}&country={proxy_country}"
+global proxy_list
+proxy_list = []
+
+if proxy_type not in proxy_types:
+    print(f"Unknown proxy type: {proxy_type}")
+    exit(1)
+
+if proxy_anonymity not in anonymity_levels:
+    print(f"Unknown anonymity level: {proxy_anonymity}")
+    exit(1)
+
+# proxyscrape.com
+def proxyscrape():
+    baseurl = "https://api.proxyscrape.com/v2/?request=getproxies&protocol=http&timeout=10000&country=all&"
+    if proxy_type == "https":
+        url = baseurl + f"ssl=yes&anonymity={proxy_anonymity}&simplified=true"
+    elif proxy_type == "http":
+        url = baseurl + f"ssl=no&anonymity={proxy_anonymity}&simplified=true"
+    r = requests.get(url)
+    if r.status_code == 200:
+        for proxy in r.text.splitlines():
+            proxy_list.append(f"{proxy}")
+
+# sslproxies.org && free-proxy-list.net && us-proxy.org
+def scrapeproxies(url):
+    r = requests.get(url)
+    if r.status_code == 200:
+        soup = BeautifulSoup(r.text,"html.parser")
+    else:
+        return None
+    rows = soup.find("tbody").find_all("tr")
+    for row in rows:
+        cells = row.find_all('td')
+        https = cells[-2].text.lower()
+        anonymity = cells[-4].text.lower()
+        if proxy_anonymity in anonymity:
+            if (proxy_type == "http" and https == "yes") or (proxy_type == "https" and https == "no"):
+                continue
+            proxy_list.append(f"{cells[0].text}:{cells[1].text}")
+        else:
+            continue
+
+# proxy-list.download
+def proxylist(url):
+    r = requests.get(url)
+    if r.status_code == 200:
+        soup = BeautifulSoup(r.text,"html.parser")
+    else:
+        return None
+    rows = soup.find("tbody", attrs={"id":"tabli"}).find_all("tr")
+    for row in rows:
+        cells = row.find_all('td')
+        anonymity = cells[-2].text.lower()
+        if proxy_anonymity in anonymity:
+            proxy_list.append(f"{cells[0].text}:{cells[1].text}")
+
+########################################################################################################
 
 if proxy_type == "http":
-	url += f"&ssl=no&anonymity={proxy_anonymity}"
+    threading.Thread(target=proxyscrape).start()
+    threading.Thread(target=scrapeproxies, args=("https://sslproxies.org/",)).start()
+    threading.Thread(target=scrapeproxies, args=("https://free-proxy-list.net/",)).start()
+    threading.Thread(target=scrapeproxies, args=("https://us-proxy.org/",)).start()
+    threading.Thread(target=proxylist, args=("https://www.proxy-list.download/HTTP",)).start()
 
 if proxy_type == "https":
-	url += f"&ssl=yes&anonymity={proxy_anonymity}"
+    threading.Thread(target=proxyscrape).start()
+    threading.Thread(target=scrapeproxies, args=("https://sslproxies.org/",)).start()
+    threading.Thread(target=scrapeproxies, args=("https://free-proxy-list.net/",)).start()
+    threading.Thread(target=scrapeproxies, args=("https://us-proxy.org/",)).start()
+    threading.Thread(target=proxylist, args=("https://www.proxy-list.download/HTTPS",)).start()
 
-# Get the proxies
-proxies = []
-tmp = requests.get(url).text.split(line_ending)
-if proxy_num == 0:
-	proxies = tmp
-	proxy_num = len(proxies)
-else:
-	for i in range(proxy_num):
-		proxies.append(tmp[random.randint(0,len(tmp)-1)])
+for t in threading.enumerate():
+    try:
+        t.join()
+    except RuntimeError:
+        continue
 
-for i in range(proxy_num):
-	if proxies[i] == "":
-		proxies.pop(i)
-
-print(f"Got: {proxy_num} {proxy_type} proxies")
-
-try:
-	os.mkdir("raw")
-except FileExistsError:
-	pass
-
-# Write the raw file
-raw_file = open(f"raw/{proxy_num}-{proxy_type}.txt","w")
-conf = open(f"{proxy_num}-{proxy_type}.conf","w")
-conf.write(f"{chain_mode}\n")
-conf.write("quiet_mode\n")
-conf.write("proxy_dns\n")
-conf.write("remote_dns_subnet 224\n")
-conf.write("tcp_read_time_out 10000\n")
-conf.write("tcp_connect_time_out 10000\n")
-conf.write("[ProxyList]\n")
-
-for i in range(len(proxies)):
-	raw_file.write(proxies[i] + "\n")
-	tmp = proxies[i].replace(':','\t')
-	if tmp == "":
-		continue
-	conf.write(f"{proxy_type}\t{tmp}\n")
-
-raw_file.close()
-conf.close()
+# Write the file
+output = open(args.o,'w')
+for proxy in proxy_list:
+    output.write( f"{proxy}\n" )
+output.close()
