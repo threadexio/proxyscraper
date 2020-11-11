@@ -22,16 +22,13 @@ print("""
 
 parser = argparse.ArgumentParser()
 parser.add_argument("type", help="Proxy type (http, https)", type=str)
-parser.add_argument("-n", help="Number of proxies to get", type=int, default=0)
 parser.add_argument("-a", help="Anonymity level (transparent, anonymous, default: elite)", type=str, default="elite")
 parser.add_argument("-o", help="Output file (default: proxies.txt)", type=str, default="proxies.txt")
 args = parser.parse_args()
 
 proxy_type = args.type
-proxy_num = args.n
 proxy_anonymity = args.a
 
-global proxy_list
 proxy_list = []
 
 if proxy_type not in proxy_types:
