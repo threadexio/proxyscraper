@@ -23,6 +23,7 @@ print("""
 parser = argparse.ArgumentParser()
 parser.add_argument("type", help="Proxy type (http, https)", type=str)
 parser.add_argument("file", help="Proxy file", type=str)
+parser.add_argument("-o", help="Alive proxies", type=str)
 parser.add_argument("-u", help="URL to test proxies with (default: google.com)", type=str, default="https://google.com/")
 parser.add_argument("-t", help="Number of threads to use (default: 10)", type=int, default=10)
 parser.add_argument("-T", help="Timeout for the request in secs (default: 5)", type=int, default=5)
@@ -35,6 +36,7 @@ proxy_type = args.type
 filename = args.file
 threadNum = args.t
 timeout = args.T
+outfile = args.o
 url = args.u
 
 if proxy_type not in proxy_types:
@@ -57,6 +59,8 @@ def check(proxy):
         return False
     except Timeout:
         return False
+    except:
+    	return False
 
 def thread_routine(start):
     i = start
@@ -89,3 +93,10 @@ for thread in threading.enumerate():
         thread.join()
     except RuntimeError:
         pass
+
+# Write to file
+if outfile:
+	output = open(outfile, 'w')
+	for proxy in good_proxies:
+		output.write( f"{proxy}\n" )
+	output.close()
